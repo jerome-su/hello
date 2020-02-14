@@ -1,1 +1,1 @@
-DIR
+COPY * app/
