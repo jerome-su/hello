@@ -1,51 +1,35 @@
-############################################################
-# Dockerfile to build Nginx Installed Containers
-# Based on Ubuntu
-############################################################
+# escape=`
+
+# Installer image
+FROM mcr.microsoft.com/windows/servercore:1809 AS installer
+
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# Retrieve .NET Core Runtime
+RUN $dotnet_version = '3.1.1'; `
+    Invoke-WebRequest -OutFile dotnet.zip https://dotnetcli.azureedge.net/dotnet/Runtime/$dotnet_version/dotnet-runtime-$dotnet_version-win-x64.zip; `
+    $dotnet_sha512 = '1d1dd4a3fe49154b402f1836ffb6463ada19833fbeeac4e07da96665d970b19c5d37a188f2b6cb691322a65c7e3587295764129bcd93be799776c2ca849959c8'; `
+    if ((Get-FileHash dotnet.zip -Algorithm sha512).Hash -ne $dotnet_sha512) { `
+        Write-Host 'CHECKSUM VERIFICATION FAILED!'; `
+        exit 1; `
+    }; `
+    `
+    Expand-Archive dotnet.zip -DestinationPath dotnet; `
+    Remove-Item -Force dotnet.zip
 
 
-# Set the base image to Ubuntu
-FROM ubuntu
+# Runtime image
+FROM mcr.microsoft.com/windows/nanoserver:1809
 
-# File Author / Maintainer
-MAINTAINER Viral Modi
+ENV `
+    # Configure web servers to bind to port 80 when present
+    ASPNETCORE_URLS=http://+:80 `
+    # Enable detection of running in a container
+    DOTNET_RUNNING_IN_CONTAINER=true
 
-# Install Nginx
+# In order to set system PATH, ContainerAdministrator must be used
+USER ContainerAdministrator
+RUN setx /M PATH "%PATH%;C:\Program Files\dotnet"
+USER ContainerUser
 
-# Add application repository URL to the default sources
-# RUN echo "deb http://archive.ubuntu.com/ubuntu/ raring main universe" >> /etc/apt/sources.list
-
-# Update the repository
-RUN apt-get update
-
-# Install necessary tools
-RUN apt-get install -y vim wget dialog net-tools
-
-RUN apt-get install -y nginx
-
-# Remove the default Nginx configuration file
-RUN rm -v /etc/nginx/nginx.conf
-
-# Copy a configuration file from the current directory
-ADD nginx.conf /etc/nginx/
-
-RUN mkdir /etc/nginx/logs
-
-# Add a sample index file
-ADD index.html /www/data/
-
-# Append "daemon off;" to the beginning of the configuration
-RUN echo "daemon off;" >> /etc/nginx/nginx.conf
-
-# Create a runner script for the entrypoint
-COPY runner.sh /runner.sh
-RUN chmod +x /runner.sh
-
-# Expose ports
-EXPOSE 80
-
-ENTRYPOINT ["/runner.sh"]
-
-# Set the default command to execute
-# when creating a new container
-CMD ["nginx"]
+COPY --from=installer ["/dotnet", "/Program Files/dotnet"]
